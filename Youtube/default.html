@@ -1,0 +1,377 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Vybin - A New Way to Manage Your Playlists</title>
+
+<link type="text/css" rel="stylesheet" href="styles/style.css">
+<link href="styles/flexible-grid.css" rel="stylesheet" type="text/css"/>
+<link rel="stylesheet" type="text/css" media="all" href="styles/jScrollPane.css" />
+
+<script src="http://code.jquery.com/jquery-latest.js"></script>
+
+<script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/swfobject/2/swfobject.js"></script>
+<script src="js/jqueryui.js" type="text/javascript"></script>
+<script src="js/mustache.js" type="text/javascript"></script> 
+
+<script src="js/tool-man/core.js" type="text/javascript"></script>
+<script src="js/tool-man/events.js" type="text/javascript"></script>
+<script src="js/tool-man/css.js" type="text/javascript"></script>
+<script src="js/tool-man/coordinates.js" type="text/javascript"></script>
+<script src="js/tool-man/drag.js" type="text/javascript"></script>
+<script src="js/tool-man/dragsort.js" type="text/javascript"></script>
+<script src="js/tool-man/cookies.js" type="text/javascript"></script>
+<script src="js/dropdownmenu.js" type="text/javascript"></script>
+
+<script src="js/scroll/jScrollPane.js" type="text/javascript"></script>
+<script src="js/scroll/jquery.mousewheel.js" type="text/javascript"></script>
+
+<script src="http://www.google.com/jsapi" type="text/javascript"></script>
+
+<script src="js/youtubeAPI.js" type="text/javascript"></script> 
+<script src="js/playlist.js" type="text/javascript"></script>
+<script src="js/UI.js" type="text/javascript"></script>
+
+<script type="application/javascript">
+
+//Song and Playlist Variables
+var playlistArray = [];
+var songJSONList = {};
+var playlistCount;
+
+//State Variables
+var ytPlayerState;
+var currentUser;
+var rendered = false;
+var notificationsEnabled = false;
+var playlistCount;
+var currentPlaylistIndex;
+var currentPlayingName;
+var isShuffle = false;;
+
+//Object Variables
+var List;
+var playlistList;
+		
+function playlist(id,name,songs)
+{
+	this.id=id;
+	this.name=name;
+	this.songs=songs;
+}		
+
+<!--
+	var dragsort = ToolMan.dragsort()
+	var junkdrawer = ToolMan.junkdrawer()
+
+	function verticalOnly(item) {
+		item.toolManDragGroup.verticalOnly()
+	}
+
+	function saveOrder(item) {
+		var group = item.toolManDragGroup
+		var list = group.element.parentNode
+		var id = list.getAttribute("id")
+		if (id == null) return
+		group.register('dragend', function() {
+			ToolMan.cookies().set("list-" + id, 
+					junkdrawer.serializeList(list), 365)
+		})
+	}
+
+	//-->
+
+$(window).resize(function() {
+   resizeScrolls();
+});
+
+function resizeScrolls()
+{
+	document.getElementById("playlistScroll").style.height = (window.innerHeight - 140)+"px";
+    document.getElementById("songScroll").style.height = (window.innerHeight - 140)+"px";
+    document.getElementById("relatedScroll").style.height = (window.innerHeight - 440)+"px";
+}
+
+var keyPressHandle;
+var startSearch = false;
+function processTyping(event)
+{
+		 var keyCode = ('which' in event) ? event.which : event.keyCode;
+		 clearTimeout(keyPressHandle);
+		
+		 keyPressHandle = setTimeout(function(){
+			 searchSong();
+			 }, 400);
+}	
+
+
+	
+//The closing message asking you if you want to save or not
+function closeIt()
+{
+	Save();
+}
+window.onbeforeunload = closeIt;
+
+function asyncForEach(array, fn, callback) {
+  array = array.slice(0);
+  function processOne() {
+    var item = array.pop();
+    fn(item, function(result) {
+        if(array.length > 0) {
+          setTimeout(processOne, 0); // schedule immediately
+        } else {
+          callback(); // Done!
+        }
+      });
+  }
+  if(array.length > 0) {
+    setTimeout(processOne, 0); // schedule immediately
+  } else {
+    callback(); // Done!
+  }
+};
+
+	$(document).ready(function(){
+		resizeScrolls();
+		List = document.getElementById("list");
+		playlistList = document.getElementById("playlistList");
+		junkdrawer.restoreListOrder("list");
+		dragsort.makeListSortable(List,
+				saveOrder);
+		currentUser = document.getElementById("usernameText");
+				
+				
+		
+	});
+	
+
+function createAccount(obj)
+{
+	var username = document.getElementById("usernameCreateText").value;
+	var password = document.getElementById("passwordCreateText").value;
+	if(password == "" || username == "")
+		{alert("Username or Password cannot be blank");return false;}
+		
+	$.post('php/createuser.php', {name: username, password:password}, function(value){
+		if(value =="")
+		{
+			alert("Account Created");
+			currentUser = username;
+			LoadPlaylists(currentUser, function()
+			{
+				closeLogin(obj);
+				$("#playButton").click(PlayButtonClick());
+			});
+		}
+		else
+			alert ("Account Already Exists");
+			return false;
+		});
+}
+
+function Login(obj)
+{
+	var username = document.getElementById("usernameText").value;
+	var password = document.getElementById("passwordText").value;
+	if(password == "" || username == "")
+		{alert("Username of Password Cannot be blank");return false;}
+	$.post('php/login.php', {name: username, password:password}, function(value){
+		if(value =="1")
+		{
+			currentUser = username;
+			//load();
+			LoadPlaylists(currentUser, function()
+			{
+				closeLogin();
+				$("#playButton").click(PlayButtonClick());
+			}
+			);
+		}
+		else
+			alert ("Invalid Username or Password");
+			return false;
+		});
+}
+
+function changeShuffle()
+{
+		if(isShuffle)
+		{
+			document.getElementById("btnShuffle").setAttribute("class","shuffleButton");	
+			isShuffle = false;
+		}
+		else
+		{
+			document.getElementById("btnShuffle").setAttribute("class","shuffleButtonPressed");
+			isShuffle = true;
+		}
+}
+
+function showVolume()
+{
+	var point = findPos(document.getElementById("btnVolume"));
+	var newdiv = creatediv("volDiv", "",20, 80, point[0], point[1]+25);
+		
+	document.body.appendChild(newdiv);
+	
+	$('body').on('mouseleave', '#volDiv', function() {
+		
+		var bod = document.getElementById('body');
+		var vD = document.getElementById('volDiv');
+		if(bod != null && vD != null){
+		bod.removeChild(vD);}
+		
+     });
+}
+
+	</script>
+</head>
+
+<body id="body" style="height:100%; width:100%; overflow:hidden">
+
+   <div class="wrapper">
+<div id="container">
+
+  <!--Login Splash-->
+  <div class="dialog" id="dialog"  style="position:fixed; left:0;top:0; overflow:hidden;  display:block; z-index:10;background:url(images/splashBack.png);background-size:100%; height:100%; width:100%">
+  	<div class="ym-grid" style="height:100%;">
+        
+        <!-- Left Column with title and other --> 
+        <div class="ym-g66 ym-gl">
+            <div style="text-align:center">
+                <p class="blanch"> <a style="color:#FFF; font-size:100px">Welcome to </a><a style="color:#6bc827; font-size:100px;">VY-BIN</a></p>
+                <p style="color:#FFF; margin-top:0px" class="blanch">A new way to manage your playlists</p>
+            </div>
+       </div>
+        
+        <!--Right Column, with Login and new account-->
+          <div class="ym-g33 ym-gr" style="background:url(images/splashBackRight.png); background-size:100%;  height:100%; text-align:center">
+          <div>
+          <!-- Log In box-->
+                <div style="margin-top: 30px; ">
+                    <p class="blanch" style="color:#FFF"> Log In</p>
+                    <input placeholder="Username" id="usernameText" class="splashText"/>
+                    <input type="password" placeholder="Password" id="passwordText" class="splashText"/>
+                    <p> <a onclick="Login()" href="#" class="signInButton">Sign In</a></p>
+                </div>
+            
+             <!-- New Account box-->
+                <div style="margin-top: 20px; ">
+                    <p class="blanch"  style="color:#FFF">New User?</p>
+                    <p class="blanch"  style="color:#FFF; margin-top:0px">Sign Up</p>
+                    <input placeholder="Create a Username" id="usernameCreateText" class="splashText"/>
+                    <input placeholder="Email" id="emailCreateText" class="splashText"/>
+                    <input type="password" placeholder="Password" id="passwordCreateText" class="splashText"/>
+                    <input type="password" placeholder="Retype Password" id="passwordReCreateText" class="splashText"/>
+                    <p > <a href="#" onclick="createAccount()" class="signInButton">Create an Account</a></p>
+                </div>
+              </div>
+                
+			</div>
+</div>
+</div>
+</div>
+
+
+
+<!--Top Bar with play buttons and nav bar-->
+	<div class="playerbar">
+    	<div class="ym-grid">
+        
+        <!--Left Column, only contains playlists and songs-->
+          <div class="ym-g66 ym-gl">
+              <a style="font-size:44px; margin-left:10px; float: left" class="blanch" >VY-BIN</a>
+                  <div style="float:left; margin-left:20px;">
+                      <a class="prevButton" href="#" ></a>
+                      <a class="playButton" href="#"></a>
+                      <a class="nextButton" href="#"></a>
+                  </div>
+              <img style="margin-top:15px;margin-left:50px; float:left;"  src="images/progressbartemp.png"/>
+          </div>
+          
+          
+          <div style="float:left; margin-left:40px;">
+          </div>
+            <div  class="ym-g33 ym-gr">
+                <div style="float: left; margin-left:10px;">
+                   <a id="btnVolume" class="volumeButton" onclick="showVolume()" href="#"></a>
+                   <a id="btnShuffle" class="shuffleButton" onclick="changeShuffle()" href="#"></a>
+               </div>
+           </div>
+           </div>
+    </div>
+    
+    <!--Middle Bar with now playing ad search-->
+	<div  class="playingbar">
+    	<div class="ym-grid">
+        
+        <!--Left Column, only contains playlists and songs-->
+          <div class="ym-g66 ym-gl">
+       <a  style="color:#FFF; margin-left:10px; font-family:Tahoma, Geneva, sans-serif; font-size:20px; font-weight:bold"> Now Playing: </a>
+       <a  style="color:#FFF; font-size:18px; font-family:Tahoma, Geneva, sans-serif" id="currentPlayingLabel"></a></div><div class="ym-g33 ym-gr">
+      <a style="width:100%"> <input onkeydown="processTyping(event);" class="searchTb" placeholder="Search Youtube" type="text"  id="searchText"/> </a>
+    </div></div></div>
+    
+    <!--Full Grid-->
+    	<div class="ym-grid">
+        
+        <!--Left Column, only contains playlists and songs-->
+          <div class="ym-g66 ym-gl">
+              
+              <!--Top Bar for Playlists and Songs--> 
+              <div class="playlistBar">
+              
+                	  <!--Visible when seeing songs-->
+                      <div id="songTopBar" style="display:none">
+                          <a class="backplaylist blanch" title="Back To Playlists" id="backbutton" onclick="backToPlaylists();"></a>
+                           <a class="blanch" style="margin-left:3px; cursor:pointer" onclick="backToPlaylists()">Back</a>
+                          <a style="float:right; margin-right: 10px;margin-left:1px;" class="blanch"  id="playlistNameLabel"></a>
+                      </div>
+                      
+                      <!--Visible when seeing playlists-->
+                      <div id="playlistTopBar" style="display:block">
+                           <div style="margin-left:10px;float:left" class="blanch" >PLAYLISTS</div>
+                          <a class="addplaylist" style="margin-top:12px; margin-right:10px;" title="Add a Playlist" id="addPlaylists" onclick="AddPlaylistClick();"></a>
+                           <a class="blanch" style="float:right; margin-right:10px; cursor:pointer" onclick="AddPlaylistClick()">New</a>
+                      </div>
+                </div>
+                
+            <!-- Songs and Playlists --> 
+            <div  class="ym-gbox" style="padding:0px;">
+          	   <!--Scroll container for songs-->
+                <div class="scroll-pane" style="overflow-y: auto;overflow-x: hidden; vertical-align:top; display:none; width:100%; height:100%" id="songScroll" >
+                   <ul class="sortable boxy clickable" id="list" style="width:100%; height:100%;" />
+                </div>
+                <!-- Playlist list, not draggable-->
+                <div class="scroll-pane"  style="overflow-y: auto;overflow-x:hidden; vertical-align:top; display:block;width:100%; height:100%; float:left"  id="playlistScroll">
+                	<div class="sortable boxy clickable" id="playlistList" style="width:100%; height:100%"></div>
+           		</div>
+       	    </div>
+          </div>
+          
+          <!-- Right Column, contains player and related list -->
+  		       <div class="ym-g33 ym-gr" style="background: #1a1a1a;">
+            <div class="ym-gbox" style="padding-left:0px; padding-right:0px">
+            	    <a name="ytplayer"></a>
+                    <div id="ytplayer_div1" style="height:240px; width:320px;">
+                    </div>
+            		<div id="ytplayer_div2"></div>
+                    <!--Realted Items-->
+                    <a class="blanch" style="margin:5px;">Recommendations</a>
+                    <div id="relatedScroll" class="scroll-pane"  style="background: #333333; vertical-align:top; overflow-y: auto;overflow-x:hidden">
+                    	<div style="height:100%; width:100%" id="relatedDiv" "></div>
+                    </div>
+            </div>
+ 		 </div>
+         </div>
+</div>
+</table>
+</div>
+
+        </div>
+      
+</body>
+
+  
+</html>
